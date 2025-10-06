@@ -1,0 +1,2 @@
+# Personal-Stuff
+Catatan pribadi
