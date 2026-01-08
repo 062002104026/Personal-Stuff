@@ -1,0 +1,213 @@
+@startuml
+title PPDL Full Process Flow (Existing)
+
+start
+
+partition "Startup" {
+  :A0 App Launch;
+  note right
+  Log INFO  "Startup reset: cleared raw=..., exp=..."
+  Log ERROR "Failed startup cache reset: {e}"
+  end note
+
+  :A1 setupUi + load config + init UI + connect signals;
+  note right
+  Log INFO  "Average interactive chart initialized"
+  Log INFO  "Daily interactive chart initialized"
+  Log ERROR "Failed to initialize interactive charts: {e}"
+  end note
+
+  :A2 Load initial data (DB fetch);
+  note right
+  Log INFO "No data found in DB on startup."
+  end note
+
+  if (Data exists?) then (yes)
+    :A3 Refresh Home Dashboard;
+    note right
+    Log SUCCESS "Dashboard Average loaded: {len(df)} rows"
+    Log WARNING "No data available for dashboard Average"
+    Log WARNING "DataFrame empty for table view"
+    Log INFO    "HOME-AVG: rows=... | V=... | A=... | W=... | E=... | F=... | PF=..."
+    Log SUCCESS "Dashboard Daily loaded: {len(df)} rows for {target_date}"
+    Log WARNING "No data available for daily dashboard"
+    Log WARNING "No data for date: {target_date}"
+    Log INFO    "HOME-DAILY: rows=... | V=... | A=... | W=... | E=... | F=... | PF=..."
+    Log INFO    "HOME synced: Average rows=..., Daily rows=..."
+    Log ERROR   "Failed to load dashboard Average: {e}"
+    Log ERROR   "Failed to load dashboard Daily: {e}"
+    end note
+  else (no)
+  endif
+}
+
+partition "User: Data Import (Main Tab)" {
+  :B1 Click Browse Folder;
+  note right
+  Log INFO    "Selected folder for data initiation: {folder}"
+  Log INFO    "Found {len(json_files)} JSON files in folder"
+  Log WARNING "No JSON files found in selected folder"
+  Log INFO    "User cancelled folder selection for data initiation."
+  end note
+
+  :B2 Click Initiate Data;
+  note right
+  Log INFO    "Selected JSON path: {file_path}"
+  Log INIT    "Starting import from selected file: {selected_file}"
+  Log SUCCESS "Import success: {total_found} rows found, {inserted_total} inserted"
+  Log ERROR   "Import failed: {res.get('message')}"
+  Log SUCCESS "Import completed. {status_text}"
+  Log INFO    "Synchronize process completed: Tab Home + Tab Initial refreshed"
+  end note
+
+  :B3 DataImporter -> DB bulk insert;
+  :B4 Load initial data + Refresh Home Dashboard;
+}
+
+partition "Initial Tab (Parameter Lock)" {
+  :C1 Check all LOCK checkboxes;
+  note right
+  Log INFO    "All parameters LOCKED - Ready to start analysis"
+  Log INFO    "Please LOCK all parameter tabs before starting"
+  Log WARNING "Please initiate data first (Tab Main)"
+  end note
+}
+
+partition "Analysis Pipeline" {
+  :D1 Click Start Analysis;
+  note right
+  Log INFO  "[pipeli] ===== START RUN ====="
+  Log INIT  "Starting new analysis run with current configuration."
+  Log INFO  "[source] Rows=... | Range=... -> ..."
+  Log INFO  "[param] Split=... | Horizon=..."
+  Log INFO  "[param] FTS interval=... | sensitivity=... | valid_lock=..."
+  Log INFO  "[param] ANN epochs=... | neurons=... | layers=... | lr=..."
+  Log INFO  "[param] ARIMA mode=... | order=(p,d,q) | s=..."
+  end note
+
+  :D2 Worker Preprocess (resample + split);
+  note right
+  Log INFO  "[source] Rows=... | Range=... -> ..."
+  Log DEBUG "[prepro] Raw sample P[W]=[...]"
+  Log INFO  "[prepro] Resample=... | original=... | resampled=... | missing_filled=..."
+  Log FORMU "[prepro] E_kWh = sum(P[W] * dt_hours) / 1000"
+  Log INFO  "[prepro] Split sizes: train=... test=..."
+  Log DEBUG "[prepro] Train sample=..."
+  Log DEBUG "[prepro] Test sample=..."
+  end note
+
+  :D3 Baseline metrics;
+  note right
+  Log RESULT "[baseline] Naive MAE=... | RMSE=... | MAPE=...%"
+  Log RESULT "[baseline] MA(N) MAE=... | RMSE=... | MAPE=...%"
+  Log ERROR  "[baseline] Failed: {e}"
+  end note
+
+  :D4 FTS stage;
+  note right
+  Log INFO  "[fts] UoD=... | intervals=... | flrg_groups=..."
+  Log DEBUG "[fts] FLRG sample=..."
+  Log DEBUG "[fts] Forecast sample=..."
+  Log RESULT "[eval] FTS MAE=... | RMSE=... | MAPE=...%"
+  Log FORMU "[eval] MAE = mean(|y - yhat|) = ..."
+  Log FORMU "[eval] RMSE = sqrt(mean((y - yhat)^2)) = ..."
+  Log FORMU "[eval] MAPE = mean(|(y - yhat)/y|)*100 = ..."
+  end note
+
+  :D5 ANN stage;
+  note right
+  Log INFO  "[ann] Config: epochs=... | neurons=... | layers=... | lr=..."
+  Log INFO  "[ann] Final loss=..."
+  Log DEBUG "[ann] Loss head/tail=... ... ..."
+  Log RESULT "[eval] ANN MAE=... | RMSE=... | MAPE=...%"
+  Log FORMU "[eval] MAE = mean(|y - yhat|) = ..."
+  Log FORMU "[eval] RMSE = sqrt(mean((y - yhat)^2)) = ..."
+  Log FORMU "[eval] MAPE = mean(|(y - yhat)/y|)*100 = ..."
+  end note
+
+  :D6 ARIMA stage;
+  note right
+  Log INFO  "[arima] AIC=... | BIC=..."
+  Log ERROR "[arima] {error}"
+  Log RESULT "[eval] ARIMA MAE=... | RMSE=... | MAPE=...%"
+  Log FORMU "[eval] MAE = mean(|y - yhat|) = ..."
+  Log FORMU "[eval] RMSE = sqrt(mean((y - yhat)^2)) = ..."
+  Log FORMU "[eval] MAPE = mean(|(y - yhat)/y|)*100 = ..."
+  end note
+
+  :D7 Worker finished -> UI updates;
+  note right
+  Log SUCCESS "Analysis pipeline finished. Rendering results..."
+  Log INFO    "[eval] ===== Evaluasi Prediksi ====="
+  Log RESULT  "[eval] {method.upper()} MAE=... | RMSE=... | MAPE=...%"
+  Log INFO    "[resume] Live: V=... | I=... | P=... W | PF=... | F=... Hz"
+  Log INFO    "[resume] Prediksi t+1: ..."
+  Log SUCCESS "Experiment log saved with run_id=..."
+  Log SUCCESS "Experiment results stored to database for all methods."
+  Log INFO    "[pipeli] ===== END RUN (OK) ====="
+  end note
+
+  :D8 Error/Cancel paths;
+  note right
+  Log ERROR "Analysis failed: {msg}"
+  Log INFO  "[pipeli] ===== END RUN (FAILED) ====="
+  Log INFO  "Analysis cancelled by user."
+  Log INFO  "[pipeli] ===== END RUN (CANCELLED) ====="
+  Log INFO  "Analysis cancelled by user before/after FTS/ANN/ARIMA stage."
+  Log INFO  "Stop requested for analysis worker."
+  end note
+}
+
+partition "Export / Log / DB Actions" {
+  :E1 Export PDF report (Main export button);
+  note right
+  Log PROCESS "Generating PDF report..."
+  Log SUCCESS "PDF report exported: {filename}"
+  Log ERROR   "PDF export failed: {e}"
+  Log ERROR   "Failed to export results: {e}"
+  end note
+
+  :E2 Resume Export (Resume tab);
+  note right
+  Log INFO    "Export: {msg} ({val}%)"
+  Log SUCCESS "Resume export saved: {filename}"
+  Log ERROR   "Resume export failed: {e}"
+  end note
+
+  :E3 Export Full Log;
+  note right
+  Log SUCCESS "Full log exported to {filename}"
+  Log ERROR   "Export log failed: {e}"
+  end note
+
+  :E4 Open SQL (Database tab);
+  note right
+  Log SUCCESS "Open SQL exported to temp file: {temp_path}"
+  Log ERROR   "Failed to load DB for export: {e}"
+  Log ERROR   "Open SQL failed: {e}"
+  end note
+}
+
+partition "Other UI Events" {
+  :F1 Perbarui Data (Download panel);
+  note right
+  Log INFO "Perbarui Data (BigQuery) skipped. User is instructed to use Data panel for local JSON import."
+  Log INFO "User clicked cancel on download panel (no active background job)."
+  end note
+
+  :F2 Log Limit Changed;
+  note right
+  Log INFO "Log display limit changed to: {new_limit} lines"
+  end note
+}
+
+partition "Shutdown" {
+  :G1 Close App;
+  note right
+  Log INFO  "Main window closing. Cleared runtime cache: raw=..., exp=..."
+  Log ERROR "Failed to clear runtime cache on exit: {e}"
+  end note
+  stop
+}
+
+@enduml

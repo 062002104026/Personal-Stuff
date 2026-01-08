@@ -1,0 +1,49 @@
+flowchart TD
+
+subgraph Startup
+  A0["A0 App Launch<br/>Logs:<br/>INFO Startup reset: cleared raw=..., exp=...<br/>ERROR Failed startup cache reset: {e}"]
+  A1["A1 setupUi + load config + init UI + connect signals<br/>Logs:<br/>INFO Average interactive chart initialized<br/>INFO Daily interactive chart initialized<br/>ERROR Failed to initialize interactive charts: {e}"]
+  A2["A2 Load initial data (DB fetch)<br/>Logs:<br/>INFO No data found in DB on startup."]
+  A3["A3 Refresh Home Dashboard (if data exists)<br/>Logs:<br/>SUCCESS Dashboard Average loaded: {len(df)} rows<br/>WARNING No data available for dashboard Average<br/>WARNING DataFrame empty for table view<br/>INFO HOME-AVG: rows=... | V=... | A=... | W=... | E=... | F=... | PF=...<br/>SUCCESS Dashboard Daily loaded: {len(df)} rows for {target_date}<br/>WARNING No data available for daily dashboard<br/>WARNING No data for date: {target_date}<br/>INFO HOME-DAILY: rows=... | V=... | A=... | W=... | E=... | F=... | PF=...<br/>INFO HOME synced: Average rows=..., Daily rows=...<br/>ERROR Failed to load dashboard Average: {e}<br/>ERROR Failed to load dashboard Daily: {e}"]
+  A0 --> A1 --> A2 --> A3
+end
+
+subgraph "User: Data Import (Main Tab)"
+  B1["B1 Click Browse Folder<br/>Logs:<br/>INFO Selected folder for data initiation: {folder}<br/>INFO Found {len(json_files)} JSON files in folder<br/>WARNING No JSON files found in selected folder<br/>INFO User cancelled folder selection for data initiation."]
+  B2["B2 Click Initiate Data<br/>Logs:<br/>INFO Selected JSON path: {file_path}<br/>INIT Starting import from selected file: {selected_file}<br/>SUCCESS Import success: {total_found} rows found, {inserted_total} inserted<br/>ERROR Import failed: {res.get('message')}<br/>SUCCESS Import completed. {status_text}<br/>INFO Synchronize process completed: Tab Home + Tab Initial refreshed"]
+  B3["B3 DataImporter -> DB bulk insert"]
+  B4["B4 Load initial data + Refresh Home Dashboard"]
+  B1 --> B2 --> B3 --> B4
+end
+
+subgraph "Initial Tab (Parameter Lock)"
+  C1["C1 Check all LOCK checkboxes<br/>Logs:<br/>INFO All parameters LOCKED - Ready to start analysis<br/>INFO Please LOCK all parameter tabs before starting<br/>WARNING Please initiate data first (Tab Main)"]
+end
+
+subgraph "Analysis Pipeline"
+  D1["D1 Click Start Analysis<br/>Logs:<br/>INFO [pipeli] ===== START RUN =====<br/>INIT Starting new analysis run with current configuration.<br/>INFO [source] Rows=... | Range=... -> ...<br/>INFO [param] Split=... | Horizon=...<br/>INFO [param] FTS interval=... | sensitivity=... | valid_lock=...<br/>INFO [param] ANN epochs=... | neurons=... | layers=... | lr=...<br/>INFO [param] ARIMA mode=... | order=(p,d,q) | s=..."]
+  D2["D2 Preprocess (resample + split)<br/>Logs:<br/>INFO [source] Rows=... | Range=... -> ...<br/>DEBUG [prepro] Raw sample P[W]=[...]<br/>INFO [prepro] Resample=... | original=... | resampled=... | missing_filled=...<br/>FORMU [prepro] E_kWh = sum(P[W] * dt_hours) / 1000<br/>INFO [prepro] Split sizes: train=... test=...<br/>DEBUG [prepro] Train sample=...<br/>DEBUG [prepro] Test sample=..."]
+  D3["D3 Baseline metrics<br/>Logs:<br/>RESULT [baseline] Naive MAE=... | RMSE=... | MAPE=...%<br/>RESULT [baseline] MA(N) MAE=... | RMSE=... | MAPE=...%<br/>ERROR [baseline] Failed: {e}"]
+  D4["D4 FTS stage<br/>Logs:<br/>INFO [fts] UoD=... | intervals=... | flrg_groups=...<br/>DEBUG [fts] FLRG sample=...<br/>DEBUG [fts] Forecast sample=...<br/>RESULT [eval] FTS MAE=... | RMSE=... | MAPE=...%<br/>FORMU [eval] MAE = mean(|y - yhat|) = ...<br/>FORMU [eval] RMSE = sqrt(mean((y - yhat)^2)) = ...<br/>FORMU [eval] MAPE = mean(|(y - yhat)/y|)*100 = ..."]
+  D5["D5 ANN stage<br/>Logs:<br/>INFO [ann] Config: epochs=... | neurons=... | layers=... | lr=...<br/>INFO [ann] Final loss=...<br/>DEBUG [ann] Loss head/tail=... ... ...<br/>RESULT [eval] ANN MAE=... | RMSE=... | MAPE=...%<br/>FORMU [eval] MAE = mean(|y - yhat|) = ...<br/>FORMU [eval] RMSE = sqrt(mean((y - yhat)^2)) = ...<br/>FORMU [eval] MAPE = mean(|(y - yhat)/y|)*100 = ..."]
+  D6["D6 ARIMA stage<br/>Logs:<br/>INFO [arima] AIC=... | BIC=...<br/>ERROR [arima] {error}<br/>RESULT [eval] ARIMA MAE=... | RMSE=... | MAPE=...%<br/>FORMU [eval] MAE = mean(|y - yhat|) = ...<br/>FORMU [eval] RMSE = sqrt(mean((y - yhat)^2)) = ...<br/>FORMU [eval] MAPE = mean(|(y - yhat)/y|)*100 = ..."]
+  D7["D7 Worker finished -> UI updates<br/>Logs:<br/>SUCCESS Analysis pipeline finished. Rendering results...<br/>INFO [eval] ===== Evaluasi Prediksi =====<br/>RESULT [eval] {method.upper()} MAE=... | RMSE=... | MAPE=...%<br/>INFO [resume] Live: V=... | I=... | P=... W | PF=... | F=... Hz<br/>INFO [resume] Prediksi t+1: ...<br/>SUCCESS Experiment log saved with run_id=...<br/>SUCCESS Experiment results stored to database for all methods.<br/>INFO [pipeli] ===== END RUN (OK) ====="]
+  D8["D8 Error/Cancel paths<br/>Logs:<br/>ERROR Analysis failed: {msg}<br/>INFO [pipeli] ===== END RUN (FAILED) =====<br/>INFO Analysis cancelled by user.<br/>INFO [pipeli] ===== END RUN (CANCELLED) =====<br/>INFO Analysis cancelled by user before/after FTS/ANN/ARIMA stage.<br/>INFO Stop requested for analysis worker."]
+  D1 --> D2 --> D3 --> D4 --> D5 --> D6 --> D7
+end
+
+subgraph "Export / Log / DB Actions"
+  E1["E1 Export PDF report (Main export button)<br/>Logs:<br/>PROCESS Generating PDF report...<br/>SUCCESS PDF report exported: {filename}<br/>ERROR PDF export failed: {e}<br/>ERROR Failed to export results: {e}"]
+  E2["E2 Resume Export (Resume tab)<br/>Logs:<br/>INFO Export: {msg} ({val}%)<br/>SUCCESS Resume export saved: {filename}<br/>ERROR Resume export failed: {e}"]
+  E3["E3 Export Full Log<br/>Logs:<br/>SUCCESS Full log exported to {filename}<br/>ERROR Export log failed: {e}"]
+  E4["E4 Open SQL (Database tab)<br/>Logs:<br/>SUCCESS Open SQL exported to temp file: {temp_path}<br/>ERROR Failed to load DB for export: {e}<br/>ERROR Open SQL failed: {e}"]
+end
+
+subgraph "Other UI Events"
+  F1["F1 Perbarui Data (Download panel)<br/>Logs:<br/>INFO Perbarui Data (BigQuery) skipped. User is instructed to use Data panel for local JSON import.<br/>INFO User clicked cancel on download panel (no active background job)."]
+  F2["F2 Log Limit Changed<br/>Logs:<br/>INFO Log display limit changed to: {new_limit} lines"]
+end
+
+subgraph Shutdown
+  G1["G1 Close App<br/>Logs:<br/>INFO Main window closing. Cleared runtime cache: raw=..., exp=...<br/>ERROR Failed to clear runtime cache on exit: {e}"]
+end
